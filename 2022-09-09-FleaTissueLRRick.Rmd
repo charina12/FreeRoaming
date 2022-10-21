@@ -1,0 +1,306 @@
+---
+title: "2022-09-09-FleaTissueLRRa"
+author: "Charlotte Manvell"
+date: "2022-09-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+library(here)
+library(dplyr)
+library(ggplot2)
+library(ggsci)
+library(MASS)
+library(lmtest)
+library(ResourceSelection)
+library(Deducer)
+npg <- pal_d3("category10")(10)
+theme_char <- function(base_size = 11, base_family = "") {
+  theme_bw() %+replace%
+    theme(
+      axis.text = element_text(color = "black"))}
+theme_set(theme_char())
+
+ORs <- function(model) {
+  Summary<-data.frame(summary(model)$coefficients)
+  Summary$`Pr(>|t|)`<-Summary$`Pr(>|t|)`
+  Summary$Variable<-rownames(summary(model)$coefficients)
+  ORs<-as_data_frame(round(exp(cbind(coef(model), confint(model))), digits = 2))
+  ORs$Variable<-rownames(exp(cbind(coef(model), confint(model))))
+  names(ORs)[1]<-"OR"
+  Mod<-merge(Summary, ORs, by = "Variable")
+  Mod$'95% CI'<-paste(Mod$`2.5 %`, Mod$`97.5 %`, sep = " - " )
+  modname<-as.data.frame(Mod)
+  return(Mod)
+}
+```
+
+```{r data}
+df <- read.csv(here("FreeRoamingDataAnalysis", "FleaTissue-LR.csv"))
+df$Ra <- ifelse(df$rickspp == "R. asembonensis", 1, 0)
+df$Bh <- ifelse(df$bartspp == "B. henselae", 1, 0)
+df$Bc <- ifelse(df$bartspp == "B. clarridgeiae", 1, 0)
+```
+
+# Univariate Forward
+
+```{r}
+df$Sex <- relevel(factor(df$Sex), ref = "Female")
+uni.sex <- glm(data = df, Ra~Sex) #univariate Cat Sex
+uni.sex.co <- summary(uni.sex)$coefficients
+
+uni.weight <- glm(data = df, Ra~Weight) #univariate Cat Weight
+uni.weight.co <- summary(uni.weight)$coefficients
+
+df$Clade <- relevel(factor(df$Clade), ref = "Clade 4")
+uni.clade <- glm(data = df, Ra~Clade) #univariate flea clade
+uni.clade.co <- summary(uni.clade)$coefficients
+
+df$Location <- relevel(factor(df$Location), ref = "Raleigh, NC")
+uni.loc <- glm(data = df, Ra~Location)
+uni.loc.co <- summary(uni.loc)$coefficients
+
+df$bartspp <- relevel(factor(df$bartspp), ref = "Negative")
+uni.bartspp <- glm(data = df, Ra~bartspp)
+uni.bartspp.co <- summary(uni.bartspp)$coefficients
+
+uni.Bh <- glm(data = df, Ra~Bh) # Pull out Bh
+uni.Bh.co <- summary(uni.Bh)$coefficients
+
+uni.Bc <- glm(data = df, Ra~Bc) # Pull out Bc
+uni.Bc.co <- summary(uni.Bc)$coefficients
+
+uni.wolb <- glm(data = df, Ra~AE, family = "binomial")
+uni.wolb.co <- summary(uni.wolb)$coefficients
+
+df$catbartspp <- relevel(factor(df$catbartspp), ref = "Negative")
+uni.catbart <- glm(data = df, Ra~catbartspp, family = "binomial")
+uni.catbart.co <- summary(uni.catbart)$coefficients
+
+uni.catrick <- glm(data = df, Ra~ catrickspp, family = "binomial")
+uni.catrick.co <- summary(uni.catrick)$coefficients
+
+df$catmycospp <- relevel(factor(df$catmycospp), ref = "Negative")
+uni.catmyco <- glm(data = df, Ra~catmycospp, family = "binomial")
+uni.catmyco.co <- summary(uni.catmyco)$coefficients
+
+uni.sex.co #drop
+uni.weight.co #keep
+uni.clade.co #keep
+uni.loc.co #keep
+uni.bartspp.co #drop
+uni.Bh.co #keep
+uni.Bc.co #drop
+uni.wolb.co #keep
+uni.catbart.co #drop 
+uni.catrick.co #drop 
+uni.catmyco.co #drop 
+```
+
+```{r}
+summary(uni.clade)
+ORs(uni.clade)
+```
+
+
+
+```{r}
+ggplot(df, aes(x = Sex, fill = rickspp))+
+  geom_bar(position = "fill")
+ggplot(df, aes(x = Weight, fill = rickspp))+
+  geom_histogram( binwidth = 1)
+ggplot(df, aes(x = Clade, fill = rickspp))+
+  geom_bar(color = "Black")
+ggplot(df, aes(x = Location, fill = rickspp))+
+  geom_bar()
+ggplot(df, aes(x = bartspp, fill = rickspp))+
+  geom_bar()
+ggplot(df, aes(x = AEspp, fill = rickspp))+
+  geom_bar()
+ggplot(df, aes(fill = rickspp, x = catbartspp))+
+  geom_bar()
+ggplot(df, aes(fill = rickspp, x = catrickspp))+
+  geom_bar()
+ggplot(df, aes(fill = rickspp, x = catmycospp))+
+  geom_bar(position = position_fill())
+```
+
+## Model Fitting
+
+```{r}
+model <- glm(data = df, Ra~Weight + Bh + Location + AE, family = "binomial")
+summary(model)
+hoslem.test(model$y, fitted(model))
+```
+
+Weight - remove 
+```{r}
+model.woweight <- glm(data = df, Ra~ Location + Bh + Clade + AE, family = "binomial")
+paste("AIC: ", round(AIC(model.woweight), 2))
+lrtest(model.woweight, model)
+hoslem.test(model.woweight$y, fitted(model.woweight))
+```
+
+Location - remove
+```{r}
+model.woloc <- glm(data = df, Ra~ Weight + Bh + Clade + AE, family = "binomial")
+paste("AIC: ", round(AIC(model.woloc), 2))
+lrtest(model.woloc, model)
+hoslem.test(model.woloc$y, fitted(model.woloc))
+```
+
+Bh - remove?
+```{r}
+model.wobh <- glm(data = df, Ra~ Weight + Location + Clade + AE, family = "binomial")
+paste("AIC: ", round(AIC(model.wobh), 2))
+lrtest(model.wobh, model)
+hoslem.test(model.wobh$y, fitted(model.wobh))
+```
+
+Clade - must keep
+```{r}
+model.woclade <- glm(data = df, Ra~ Weight + Location + Bh + AE, family = "binomial")
+paste("AIC: ", round(AIC(model.woclade), 2))
+lrtest(model.woclade, model)
+hoslem.test(model.woclade$y, fitted(model.woclade))
+```
+
+AE - remove
+```{r}
+model.wowolb <- glm(data = df, Ra~ Weight + Location + Bh + Clade, family = "binomial")
+paste("AIC: ", round(AIC(model.wowolb), 2))
+lrtest(model.wowolb, model)
+hoslem.test(model.wowolb$y, fitted(model.wowolb))
+```
+
+# Big Model
+
+Clade has such a huge impact that I chose to remove it and see if anything else shakes out
+
+```{r}
+big_mod <- glm(data = df, Ra~Location + Weight + Sex + Bh + AE + catbartspp + catrickspp + catmycospp, family = "binomial")
+summary(big_mod)
+```
+
+
+```{r}
+stepAIC(big_mod, direction = "both", trace = F)
+small_mod <- glm(data = df, Ra~Location + catmycospp, family = "binomial")
+```
+
+```{r}
+hoslem.test(small_mod$y, fitted(small_mod))
+```
+
+
+```{r}
+Predprob <- predict(small_mod, type = "response")
+rocplot(small_mod)
+```
+
+# Model Fitting from Big Model
+
+Location - super important
+```{r}
+small_mod.wo.loc <- glm(data = df, Ra~catmycospp, family = "binomial")
+lrtest(small_mod, small_mod.wo.loc)
+```
+
+cat myco is important??
+```{r}
+small_mod.wo.myco <- glm(data = df, Ra~Location , family = "binomial")
+lrtest(small_mod, small_mod.wo.myco)
+```
+
+```{r}
+df %>% 
+  summarize(Weight.m <- median(Weight),
+            Weight.r <- paste(range(Weight)[1], "-", range(Weight)[2]))
+
+pct <- function(x) {
+  df %>% group_by({{x}}) %>% 
+  summarise(cnt = n()) %>%
+  mutate(freq = round(cnt/sum(cnt), 2))
+  }
+a <- pct(Sex)
+b <- pct(catbartspp)
+c <- pct(catmycospp)
+d <- pct(Location)
+e <- pct(bartspp)
+f <- pct(rickspp)
+g <- pct(AE)
+h <- pct(Clade)
+a
+b
+c
+d
+e
+f
+g
+h
+```
+
+```{r}
+ra <- df %>% filter(Ra == 1)
+
+ra %>% 
+  summarize(Weight.m <- median(Weight),
+            Weight.r <- paste(range(Weight)[1], "-", range(Weight)[2]))
+
+pct <- function(x) {
+  ra %>% group_by({{x}}) %>% 
+  summarise(cnt = n()) %>%
+  mutate(freq = round(cnt/sum(cnt), 2))
+  }
+a <- pct(Sex)
+b <- pct(catbartspp)
+c <- pct(catmycospp)
+d <- pct(Location)
+e <- pct(bartspp)
+f <- pct(rickspp)
+g <- pct(AE)
+h <- pct(Clade)
+a
+b
+c
+d
+e
+f
+g
+h
+```
+
+```{r}
+bc <- df %>% filter(Bc == 1)
+
+bc %>% 
+  summarize(Weight.m <- median(Weight),
+            Weight.r <- paste(range(Weight)[1], "-", range(Weight)[2]))
+
+pct <- function(x) {
+  bc %>% group_by({{x}}) %>% 
+  summarise(cnt = n()) %>%
+  mutate(freq = round(cnt/sum(cnt), 2))
+  }
+a <- pct(Sex)
+b <- pct(catbartspp)
+c <- pct(catmycospp)
+d <- pct(Location)
+e <- pct(bartspp)
+f <- pct(rickspp)
+g <- pct(AE)
+h <- pct(Clade)
+a
+b
+c
+d
+e
+f
+g
+h
+```
+
